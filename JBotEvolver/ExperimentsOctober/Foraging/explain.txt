@@ -1,0 +1,5 @@
+Question: what is the influence of the sensor type on the behaviour? robot does not see next from everywhere so it is still performing roombot behaviour at gen 50 (when pop size is 50 and samples is 5). Thereafter more circular behaviour. and then if puck at target, immediately turn around
+Maybe we should put target location somewhere else… robot does not really look smart.
+Maybe different fitness function? or look at influence of sensor capabilities?
+When samples is more than 1, is the second fitness that also averaged or added?
+When pop size is 20, more of the round circle behaviour (no roombot behaviour)

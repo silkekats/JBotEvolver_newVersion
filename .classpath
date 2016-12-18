@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="EvolutionAutomator"/>
+	<classpathentry excluding="evolutionaryrobotics/evolution/odneat/controlsystem/ANNODNEATController.java" kind="src" path="JBotEvolver/src"/>
+	<classpathentry kind="src" path="JBotSim/src"/>
+	<classpathentry kind="lib" path="JBotEvolver/commons-io-2.2.jar"/>
+	<classpathentry kind="lib" path="JBotSim/lib/asm-all-4.0.jar"/>
+	<classpathentry kind="lib" path="JBotSim/lib/BaseClient.jar"/>
+	<classpathentry kind="lib" path="JBotSim/lib/jafama.jar"/>
+	<classpathentry kind="lib" path="JBotSim/lib/javassist.jar"/>
+	<classpathentry kind="lib" path="JBotSim/lib/jfreesvg-3.0.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

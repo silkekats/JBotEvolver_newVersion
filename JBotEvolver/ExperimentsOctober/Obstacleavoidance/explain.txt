@@ -1,0 +1,5 @@
+The evolved behaviour is like roombot. this is a bit surprising because we usually see a circle behaviour in the round arena. 
+Probably this is due to the obstacles.
+What influences the nice fitness curve? Not much.
+Only thing: when pop size is too small and online learning is done > fitness graph really volatile.
+Ask question: is pop 20 for random location really different than online??? > do bit more runs
