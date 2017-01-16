@@ -9,11 +9,20 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -39,6 +48,7 @@ import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.text.DefaultCaret;
 
 import simulation.JBotSim;
@@ -63,6 +73,8 @@ public class ConfigurationGui extends Gui{
 	
 	private static final long serialVersionUID = -5613912585135405020L;
 	private static final int OPTIONS_GRID_LAYOUT_SIZE = 15;
+	private static final int FAILED = 1;
+	private static final int SUCCESSFUL = 0;
 	
 	private String[] keys =
 		{"output","robots", "controllers", "population", "environment",
@@ -99,14 +111,14 @@ public class ConfigurationGui extends Gui{
 	
 	private RobotsResult robotConfig;
 	private ConfigurationResult result;
+	private HashMap<String, Arguments> resultArgsCopy;
+	private volatile boolean newEvolution;
 	
 	private Arguments rendererArgs;
 
 	private ArrayList<String> blackList;
 	
 	private boolean showPreview = true;
-	
-	private String extraArgs = "";
 	
 	public ConfigurationGui(JBotSim jBotSim, Arguments args) {
 		super(jBotSim,args);
@@ -129,6 +141,8 @@ public class ConfigurationGui extends Gui{
 		
 		robotConfig = new RobotsResult();
 		result = new ConfigurationResult(keys);
+		resultArgsCopy = new HashMap<String, Arguments>();
+		newEvolution = false;
 		
 		setLayout(new BorderLayout());
 		add(initResultPanel(), BorderLayout.EAST);
@@ -446,23 +460,42 @@ public class ConfigurationGui extends Gui{
 		
 		saveArgumentsFileButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent event) {
+				try {
+					@SuppressWarnings("unchecked")
+					HashMap<String, Arguments> resultArgsCopy = (HashMap<String, Arguments>) deepCopy(result.getArguments());
+
+					if (correctConfiguration(resultArgsCopy)) {
+						createArgumentsFile(resultArgsCopy);
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		});
+		
+		/*saveArgumentsFileButton.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent event) {
 				if(!correctConfiguration()) {
 					return;
 				}
 				createArgumentFile();
 			}
-		});
+		});*/
 		
 		testArgumentsFileButton.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent event) {
-				if(!correctConfiguration()) {
-					return;
-				}
 				//String output = "test_" + new Random().nextInt();
 				
 				try {
-					String[] transformedArgs = Arguments.readOptionsFromString(result.toString());
+					@SuppressWarnings("unchecked")
+					HashMap<String, Arguments> resultArgsCopy = (HashMap<String, Arguments>) deepCopy(result.getArguments());
+
+					if (!correctConfiguration(resultArgsCopy)) {
+						return;
+					}
+
+					String[] transformedArgs = Arguments.readOptionsFromString(result.toString(resultArgsCopy));
 					HashMap<String,Arguments> argumentsHash = Arguments.parseArgs(transformedArgs);
 					
 					//argumentsHash.put("--output", new Arguments(output));
@@ -523,41 +556,163 @@ public class ConfigurationGui extends Gui{
 		runEvolution.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent event) {
-				PrintWriter printWriter = null;
-				String outputText = result.getArgument("output").getCompleteArgumentString().trim();
-				
-				if(!correctConfiguration()) {
-					return;
-				}
-				
 				try {
-					printWriter = new PrintWriter(new File(outputText + ".conf"));
-					printWriter.write(result.toString()+extraArgs);
-					printWriter.close ();
-					
-//					configurationAutomator.startEvolution(outputText);
-					wakeUpWaitingThreads();
-			    } catch (FileNotFoundException e) {
-			    	e.printStackTrace();
-			    } finally {
-			    	printWriter.close ();
-			    }
+					@SuppressWarnings("unchecked")
+					HashMap<String, Arguments> resultArgsCopy = (HashMap<String, Arguments>) deepCopy(result.getArguments());
+					File dir = new File(resultArgsCopy.get("output").getCompleteArgumentString().trim());
+
+					if (correctConfiguration(resultArgsCopy) && prepOutputDir(dir) == SUCCESSFUL && saveArguments(dir, resultArgsCopy) == SUCCESSFUL) {
+						for (String argumentsKey : resultArgsCopy.keySet()) {
+							for (String key : keys) {
+								if (argumentsKey.equalsIgnoreCase(key)) {
+									ConfigurationGui.this.resultArgsCopy.put("--" + key, resultArgsCopy.get(argumentsKey));
+									break;
+								}
+							}
+						}
+
+						runEvolution.setEnabled(false);
+
+						synchronized (ConfigurationGui.this.resultArgsCopy) {
+							newEvolution = true;
+							ConfigurationGui.this.resultArgsCopy.notify();
+						}
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 			}
 		});
 	}
 	
-	private boolean correctConfiguration() {
-		
+	private Object deepCopy(Object obj) throws Exception {
+		ObjectOutputStream oos = null;
+		ObjectInputStream ois = null;
+
+		try {
+			ByteArrayOutputStream bos = new ByteArrayOutputStream();
+			oos = new ObjectOutputStream(bos);
+
+		    oos.writeObject(obj);
+		    oos.flush();
+
+		    ois = new ObjectInputStream(new ByteArrayInputStream(bos.toByteArray()));
+
+			return ois.readObject();
+		} finally {
+			try {
+				if (oos != null) {
+					oos.close();
+				}
+
+				if (ois != null) {
+					ois.close();
+				}
+			} catch (IOException e) {
+			}
+		}
+	}
+	
+	private int prepOutputDir(File dir) {
+		try {
+			if (dir.exists()) {
+				if (!dir.isDirectory()) {
+					if (JOptionPane.showConfirmDialog(this, "The filename, specified by the argument '--output', "
+							+ "is assigned to a file that is not a directory.\nTo continue starting the "
+							+ "evolution, this file will be overwritten with a directory of the same name.", 
+							"Error starting evolution", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) {
+						return FAILED;
+					}
+					
+					try {
+						dir.delete();
+					} catch (SecurityException e) {
+						JOptionPane.showMessageDialog(this, "The file cannot be overwritten.", "Fatal error starting "
+								+ "evolution", JOptionPane.ERROR_MESSAGE);
+
+						return FAILED;
+					}
+				} else if (dir.listFiles().length > 0) {
+					if (JOptionPane.showConfirmDialog(this, "The output directory, specified by the argument "
+							+ "'--output', already contains files.\nTo continue starting the evolution, this directory "
+							+ "will be emptied.", "Error starting evolution", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) {
+						return FAILED;
+					}
+					
+					try {
+						emptyDirectory(dir);
+					} catch (Exception e) {
+						JOptionPane.showMessageDialog(this, "Could not empty directory.", "Fatal error "
+								+ "starting evolution", JOptionPane.ERROR_MESSAGE);
+
+						return FAILED;
+					}
+				}
+			}
+
+			if (!dir.exists() && !dir.mkdirs()) {
+				JOptionPane.showMessageDialog(this, "The output directory, specified by the argument '--output', "
+						+ "could not be created.", "Fatal error starting evolution", JOptionPane.ERROR_MESSAGE);
+
+				return FAILED;
+			}
+		} catch (SecurityException e) {
+			JOptionPane.showMessageDialog(this, "The output directory could not be set up.",
+					"Fatal error starting evolution", JOptionPane.ERROR_MESSAGE);
+			e.getStackTrace();
+			
+			return FAILED;
+		}
+
+		return SUCCESSFUL;
+	}
+	
+	private int saveArguments(File dir, HashMap<String, Arguments> resultArgsCopy) {
+		try {
+			PrintWriter printWriter = new PrintWriter(new File(dir.getAbsolutePath() + 
+					System.getProperty("file.separator") + "arguments.conf"));
+			printWriter.write(result.toString(resultArgsCopy));
+			printWriter.close();
+		} catch (FileNotFoundException | SecurityException e) {
+			JOptionPane.showMessageDialog(this, "The arguments file could not be saved.",
+					"Fatal error starting evolution", JOptionPane.ERROR_MESSAGE);
+			e.getStackTrace();
+
+			return FAILED;
+		}
+
+		return SUCCESSFUL;
+	}
+	
+	private void emptyDirectory(File dir) throws Exception {
+		Files.walkFileTree(dir.toPath(), new SimpleFileVisitor<Path>() {
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+				Files.delete(file);
+
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+				Files.delete(dir);
+
+				return FileVisitResult.CONTINUE;
+			}
+		});
+	}
+	
+	private boolean correctConfiguration(HashMap<String, Arguments> arguments) {
 		String msg = "";
-		
-		for(String k : keys) {
-			if(result.getArgument(k).getNumberOfArguments() == 0) {
-				String argMsg = "Missing argument \"--"+k+"\""; 
-				msg+= msg.isEmpty() ? argMsg : "\n" + argMsg; 
+
+		for (String k : keys) {
+			if (arguments.get(k).getNumberOfArguments() == 0) {
+				String argMsg = "Missing argument \"--" + k + "\""; 
+				msg += msg.isEmpty() ? argMsg : "\n" + argMsg; 
 			}
 		}
 		
-		if(!msg.isEmpty()) {
+		if (!msg.isEmpty()) {
 			JOptionPane.showConfirmDialog(this, msg);
 			return false;
 		}
@@ -566,7 +721,7 @@ public class ConfigurationGui extends Gui{
 	}
 
 	private void updateConfigurationText() {
-		configResult.setText(result.toHTMLString(extraArgs));
+		configResult.setText(result.toHTMLString());
 //		for(String s:keys){
 //			tree.setArgumet(s,result.getArgument(s));
 //		}
@@ -681,33 +836,29 @@ public class ConfigurationGui extends Gui{
 		
 		return null;
 	}
+	
+	private void createArgumentsFile(HashMap<String, Arguments> resultArgsCopy) {
+		JFileChooser fileChooser = new JFileChooser(".");
 
-	private void createArgumentFile() {
-		
-		String outputText = result.getArgument("output").getCompleteArgumentString().trim();
-		
-		if(outputText.length() > 0){
-			JFileChooser fileChooser = new JFileChooser(".");
-			fileChooser.setSelectedFile(new File(outputText + ".conf"));
-			fileChooser.setDialogTitle("Save File");
-			fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-			
-			if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-				PrintWriter printWriter = null;
+		fileChooser.setDialogTitle("Save arguments file");
+		fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+		fileChooser.setFileFilter(new FileNameExtensionFilter("Arguments file format (*.conf)", "conf"));
+		if (fileChooser.showDialog(this, "Save") == JFileChooser.APPROVE_OPTION) {
+			String filePath = fileChooser.getSelectedFile().getName();
+
+			if (filePath.endsWith(".conf")) {
 				try {
-					String filePath = fileChooser.getSelectedFile().getAbsolutePath();
-					
-					printWriter = new PrintWriter(new File(filePath));
-					printWriter.write(result.toString());
-			    	JOptionPane.showMessageDialog(this, "File " + outputText + ".conf, created!");
-			    } catch (FileNotFoundException e) {
-			    	e.printStackTrace();
-			    } finally {
-			    	printWriter.close ();
-			    }
+					PrintWriter printWriter = new PrintWriter(new File(filePath));
+					printWriter.write(result.toString(resultArgsCopy));
+					printWriter.close();
+
+					JOptionPane.showMessageDialog(this, "File " + filePath + ", created!");
+				} catch (FileNotFoundException | SecurityException e) {
+					e.printStackTrace();
+				}
+			} else {
+				JOptionPane.showMessageDialog(this, "Arguments file needs a '.conf' extension.", "Error saving file", JOptionPane.ERROR_MESSAGE);
 			}
-		}else{
-			JOptionPane.showMessageDialog(this, "No Output Name defined.");
 		}
 	}
 	
@@ -746,29 +897,26 @@ public class ConfigurationGui extends Gui{
 		}
 	}
 	
-	private void clear(){
-		while(!sensorsActuatorsListModel.isEmpty()){
-			robotConfig.remove(sensorsActuatorsListModel.get(0));
-			updateSensorsActuatorsList();
-			updateConfigurationText();
-		}
+	@SuppressWarnings("unchecked")
+	private void clear() {
+		Component component;
 
-		result.setArgument("robots", robotConfig.getCompleteArguments());
+		robotConfig.emptyConfig();
+		if (!sensorsActuatorsListModel.isEmpty()) {
+			sensorsActuatorsListModel.clear();
+		}
 		
 		for (String key : argumentsComponents.keySet()) {
-			Component component = argumentsComponents.get(key);
-			if(component instanceof JComboBox){
-				JComboBox<String> comboBox = (JComboBox<String>) component;
-				comboBox.setSelectedIndex(0);
-			}else if(component instanceof JTextField){
-				if(key.equals("random-seed"))
-					continue;
-				JTextField textfield = (JTextField) component;
-				textfield.setText("");
+			component = argumentsComponents.get(key);
+
+			if (component instanceof JComboBox) {
+				((JComboBox<String>) component).setSelectedIndex(0);
+			} else if (component instanceof JTextField && !key.equals("random-seed")) {
+				((JTextField) component).setText("");
 			}
 		}
+
 		rendererPanel.removeAll();
-		extraArgs = "";
 	}
 	
 	private File chooseFile() {
@@ -796,22 +944,23 @@ public class ConfigurationGui extends Gui{
 			if(correctKey.equals("output")){
 				className = completeArguments.getArguments().get(0);
 			}else if(correctKey.equals("random-seed")){
-				className = completeArguments.getArguments().get(0);;
+				className = completeArguments.getArguments().get(0);
 			}else{
 				className = completeArguments.getArgumentAsString("classname");
 				if(className == null) {
-					extraArgs+=key+=" "+argumentsHash.get(key).getCompleteArgumentString()+"\n";
+					result.setArgument(correctKey, completeArguments);
+					updateConfigurationText();
 					continue;
 				}
 				className = className.split("\\.")[className.split("\\.").length-1];
 				
-				specialAddToConfigFile(correctKey, completeArguments, className);
+				specialAddToConfigFile(correctKey, completeArguments);
 			}
 			setLoadedArgToComponent(correctKey, className);
 		}
 	}
 
-	private void specialAddToConfigFile(String key, Arguments arguments,String className) {
+	private void specialAddToConfigFile(String key, Arguments arguments) {
 		if(key.equals("robots")){
 			Arguments sensorArguments = new Arguments(arguments.getArgumentAsString("sensors"));
 			Arguments actuatorsArguments = new Arguments(arguments.getArgumentAsString("actuators"));
@@ -1334,23 +1483,33 @@ public class ConfigurationGui extends Gui{
 		}
 	}
 	
-	public synchronized void wakeUpWaitingThreads() {
-		notifyAll();
-	}
-	
-	public synchronized void waitUntilEvolutionLaunched() {
-		try {
-			wait();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+	public HashMap<String, Arguments> waitForEvolution() {
+		if (newEvolution != false) {
+			newEvolution = false;
 		}
+
+		if (!runEvolution.getText().equals("Run Evolution")) {
+			runEvolution.setText("Run Evolution");
+		}
+		
+		runEvolution.setEnabled(true);
+		runEvolution.repaint();
+		
+		synchronized (resultArgsCopy) {
+			while (!newEvolution) {
+				try {
+					resultArgsCopy.wait();
+				} catch (InterruptedException e) {
+				}
+			}
+		}
+
+		runEvolution.setText("in progress...");
+		runEvolution.repaint();
+
+		return resultArgsCopy;
 	}
 	
 	@Override
 	public void dispose() {}
-
-	public String getConfigurationFileName() {
-		return result.getArgument("output").getCompleteArgumentString().trim();
-	}
-	
 }	

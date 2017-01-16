@@ -4,6 +4,8 @@ import evolutionaryrobotics.JBotEvolver;
 import gui.configuration.ConfigurationGui;
 import gui.evolution.EvolutionGui;
 
+import java.util.HashMap;
+
 import javax.swing.JFrame;
 import javax.swing.JTabbedPane;
 import javax.swing.UIManager;
@@ -50,7 +52,16 @@ public class CombinedGui extends JFrame {
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		setVisible(true);
 		
-		new WaitForEvolutionThread(configAutomatorGui).start();
+		while (true) {
+			try {
+				HashMap<String, Arguments> arguments = configAutomatorGui.waitForEvolution();
+				evo.init(new JBotEvolver(arguments, Long.parseLong(arguments.get("--random-seed").getCompleteArgumentString())));
+				tabbedPane.setSelectedIndex(1);
+				evo.executeEvolution();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 	
 	public CombinedGui() {
@@ -59,45 +70,5 @@ public class CombinedGui extends JFrame {
 	
 	public static void main(String[] args) {
 		new CombinedGui();
-	}
-	
-	protected class WaitForEvolutionThread extends Thread {
-		
-		private ConfigurationGui configAutomatorGui;
-		
-		public WaitForEvolutionThread(ConfigurationGui configAutomatorGui) {
-			this.configAutomatorGui = configAutomatorGui;
-		}
-		
-		@Override
-		public void run() {
-			while(true) {
-				configAutomatorGui.waitUntilEvolutionLaunched();
-				new EvolutionGuiThread(configAutomatorGui.getConfigurationFileName()).start();
-				tabbedPane.setSelectedIndex(1);
-			}
-		}
-	}
-	
-	protected class EvolutionGuiThread extends Thread{
-		
-		private String configFileName;
-
-		public EvolutionGuiThread(String configFileName) {
-			this.configFileName = configFileName;
-		}
-		
-		@Override
-		public void run() {
-			try {
-				evo.stopEvolution();
-				String[] args = new String[]{configFileName + ".conf"};
-				JBotEvolver jBotEvolver = new JBotEvolver(args);
-				evo.init(jBotEvolver);
-				evo.executeEvolution();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}
 	}
 }

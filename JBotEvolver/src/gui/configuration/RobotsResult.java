@@ -10,6 +10,10 @@ public class RobotsResult {
 	private Arguments actuators;
 	
 	public RobotsResult() {
+		emptyConfig();
+	}
+	
+	public void emptyConfig() {
 		robotArgs = new Arguments("");
 		sensors = new Arguments("");
 		actuators = new Arguments("");

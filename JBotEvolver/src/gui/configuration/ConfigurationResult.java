@@ -16,6 +16,10 @@ public class ConfigurationResult {
 		for (String key : keys) 
 			arguments.put(key, new Arguments(""));
 	}
+	
+	public HashMap<String, Arguments> getArguments() {
+		return arguments;
+	}
 
 	public void setArgument(String name, Arguments arg) {
 		selectedKey = name;
@@ -30,39 +34,43 @@ public class ConfigurationResult {
 		this.selectedKey = selectedKey;
 	}
 	
-	public String toString(){
+	public String toString() {
+		return toString(arguments);
+	}
+	
+	public String toString(HashMap<String, Arguments> arguments) {
 		String res = "";
 		
-		for(String s : keys) {
-			if(arguments.get(s).getNumberOfArguments() > 1)
-				res+= "--"+s +"\n "+ Arguments.beautifyString(arguments.get(s) + "") + "\n\n";
-			else
-				res+= "--"+s + " "+ arguments.get(s) + "\n\n";
+		for (String s : keys) {
+			if (arguments.get(s).getNumberOfArguments() > 1) {
+				res += "--" + s +"\n "+ Arguments.beautifyString(arguments.get(s) + "") + "\n\n";
+			} else {
+				res += "--" + s + " " + arguments.get(s) + "\n\n";
+			}
 		}
 		
 		return res;
 	}
 	
-	public String toHTMLString(String extraArgs){
+	public String toHTMLString() {
 		String res = "<pre>";
 		
-		for(String s : keys) {
-			if(s.equals(selectedKey)){
-				res+="<span style=\"background-color: #FFFF00\"> ";
+		for (String s : keys) {
+			if (s.equals(selectedKey)) {
+				res += "<span style=\"background-color: #FFFF00\"> ";
 			}
-			if(arguments.get(s).getNumberOfArguments() > 1)
-				res+= "--"+s +"<br> "+ Arguments.beautifyString(arguments.get(s) + "") + "<br><br>";
-			else
-				res+= "--"+s + " "+ arguments.get(s) + "<br><br>";
-			if(s.equals(selectedKey)){
-				res+="</span>";
+			
+			if (arguments.get(s).getNumberOfArguments() > 1) {
+				res += "--" + s + "<br> " + Arguments.beautifyString(arguments.get(s) + "") + "<br><br>";
+			} else {
+				res += "--" + s + " " + arguments.get(s) + "<br><br>";
 			}
-
+			
+			if (s.equals(selectedKey)) {
+				res += "</span>";
+			}
 		}
 		
-		res+=extraArgs;
-		
-		return res +"</pre>";
+		return res + "</pre>";
 	}
-	
 }
