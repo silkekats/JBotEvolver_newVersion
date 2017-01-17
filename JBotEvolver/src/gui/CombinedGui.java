@@ -38,10 +38,9 @@ public class CombinedGui extends JFrame {
 			e.printStackTrace();
 		}
 		
-		evo = new EvolutionGui(jbot, new Arguments(""));
-		ConfigurationGui configAutomatorGui = new ConfigurationGui(jbot, new Arguments(""));
+		evo = new EvolutionGui(jbot);
 		
-		tabbedPane.addTab("Configuration", configAutomatorGui);
+		tabbedPane.addTab("Configuration", new ConfigurationGui(jbot, this));
 		tabbedPane.addTab("Evolution", evo);
 		tabbedPane.addTab("Results", Gui.getGui(jbot, jbot.getArguments().get("--gui")));
 		
@@ -51,17 +50,12 @@ public class CombinedGui extends JFrame {
 		setLocationRelativeTo(null);
 		setDefaultCloseOperation(EXIT_ON_CLOSE);
 		setVisible(true);
-		
-		while (true) {
-			try {
-				HashMap<String, Arguments> arguments = configAutomatorGui.waitForEvolution();
-				evo.init(new JBotEvolver(arguments, Long.parseLong(arguments.get("--random-seed").getCompleteArgumentString())));
-				tabbedPane.setSelectedIndex(1);
-				evo.executeEvolution();
-			} catch (Exception e) {
-				e.printStackTrace();
-			}
-		}
+	}
+	
+	public void switchGUIs(HashMap<String, Arguments> resultArgsCopy) {
+		evo.init(new JBotEvolver(resultArgsCopy, Long.parseLong(resultArgsCopy.get("--random-seed").getCompleteArgumentString())));
+		tabbedPane.setSelectedIndex(1);
+		evo.executeEvolution();
 	}
 	
 	public CombinedGui() {

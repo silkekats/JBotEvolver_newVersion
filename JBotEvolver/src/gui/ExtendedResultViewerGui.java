@@ -115,7 +115,7 @@ public class ExtendedResultViewerGui extends Gui {
 	private EnvironmentKeyDispatcher dispatcher;
 
 	public ExtendedResultViewerGui(JBotSim jBotEvolver, Arguments args) {
-		super(jBotEvolver,args);
+		super(jBotEvolver);
 		this.jBotEvolver = (JBotEvolver)jBotEvolver;
 
 		if(args.getArgumentIsDefined("renderer"))

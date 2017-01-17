@@ -9,7 +9,7 @@ public abstract class Gui extends JPanel {
 	
 	protected JBotSim jBotSim;
 	
-	public Gui(JBotSim jBotSim, Arguments args) {
+	public Gui(JBotSim jBotSim) {
 		this.jBotSim = jBotSim;
 	}
 

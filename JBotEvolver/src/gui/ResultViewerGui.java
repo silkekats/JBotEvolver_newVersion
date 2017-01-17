@@ -150,7 +150,7 @@ public class ResultViewerGui extends Gui implements Updatable {
 	protected String lastOpenedPath = ".";
 
 	public ResultViewerGui(JBotSim jBotEvolver, Arguments args) {
-		super(jBotEvolver, args);
+		super(jBotEvolver);
 		this.jBotEvolver = (JBotEvolver) jBotEvolver;
 
 		if (args.getArgumentIsDefined("renderer")) {

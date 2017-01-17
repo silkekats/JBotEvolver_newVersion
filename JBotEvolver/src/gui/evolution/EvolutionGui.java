@@ -60,8 +60,8 @@ public class EvolutionGui extends Gui {
 	private UpdateEvolutionThread updateThread;
 	
 	
-	public EvolutionGui(JBotSim jBotSim, Arguments args) {
-		super(jBotSim, args);
+	public EvolutionGui(JBotSim jBotSim) {
+		super(jBotSim);
 		
 		if(jBotSim instanceof JBotEvolver)
 			this.jBotEvolver = (JBotEvolver)jBotSim;

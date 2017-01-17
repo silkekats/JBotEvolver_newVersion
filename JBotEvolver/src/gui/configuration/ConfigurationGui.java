@@ -37,7 +37,6 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
-import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -66,6 +65,7 @@ import evolutionaryrobotics.evaluationfunctions.EvaluationFunction;
 import evolutionaryrobotics.evolution.Evolution;
 import evolutionaryrobotics.neuralnetworks.NeuralNetwork;
 import evolutionaryrobotics.populations.Population;
+import gui.CombinedGui;
 import gui.Gui;
 import gui.renderer.Renderer;
 
@@ -76,9 +76,7 @@ public class ConfigurationGui extends Gui{
 	private static final int FAILED = 1;
 	private static final int SUCCESSFUL = 0;
 	
-	private String[] keys =
-		{"output","robots", "controllers", "population", "environment",
-			"executor","evolution", "evaluation", "random-seed"};
+	private String[] keys;
 
 	private JPanel configurationPanelLeft;
 	private JPanel optionsPanelCenter;
@@ -111,27 +109,26 @@ public class ConfigurationGui extends Gui{
 	
 	private RobotsResult robotConfig;
 	private ConfigurationResult result;
-	private HashMap<String, Arguments> resultArgsCopy;
-	private volatile boolean newEvolution;
 	
 	private Arguments rendererArgs;
 
 	private ArrayList<String> blackList;
 	
 	private boolean showPreview = true;
-	
-	public ConfigurationGui(JBotSim jBotSim, Arguments args) {
-		super(jBotSim,args);
-		init();
+
+	public ConfigurationGui(JBotSim jBotSim, CombinedGui combinedGui) {
+		this(jBotSim, combinedGui, new String[] {"output", "robots", "controllers", "population", "environment",
+				"executor", "evolution", "evaluation", "random-seed"});
 	}
 	
-	public ConfigurationGui(JBotSim jBotSim, Arguments args, String[] keys) {
-		super(jBotSim,args);
+	public ConfigurationGui(JBotSim jBotSim, CombinedGui combinedGui, String[] keys) {
+		super(jBotSim);
 		this.keys = keys;
-		init();
+
+		init(combinedGui);
 	}
 	
-	public void init() {
+	public void init(CombinedGui combinedGui) {
 		optionsAttributes = new ArrayList<AutomatorOptionsAttribute>();
 		argumentsComponents = new HashMap<String, Component>();
 		
@@ -141,15 +138,13 @@ public class ConfigurationGui extends Gui{
 		
 		robotConfig = new RobotsResult();
 		result = new ConfigurationResult(keys);
-		resultArgsCopy = new HashMap<String, Arguments>();
-		newEvolution = false;
 		
 		setLayout(new BorderLayout());
 		add(initResultPanel(), BorderLayout.EAST);
 		add(initSelectionPanel(), BorderLayout.WEST);
 		add(initConfigurationPanel(), BorderLayout.CENTER);
 		
-		initListeners();
+		initListeners(combinedGui);
 
 		setSize(1100, 800);
 		setVisible(true);
@@ -439,7 +434,7 @@ public class ConfigurationGui extends Gui{
 		return panel;
 	}
 	
-	private void initListeners() {
+	private void initListeners(CombinedGui combinedGui) {
 
 		optionsButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -472,15 +467,6 @@ public class ConfigurationGui extends Gui{
 				}
 			}
 		});
-		
-		/*saveArgumentsFileButton.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent event) {
-				if(!correctConfiguration()) {
-					return;
-				}
-				createArgumentFile();
-			}
-		});*/
 		
 		testArgumentsFileButton.addActionListener(new ActionListener() {
 			@Override
@@ -562,27 +548,50 @@ public class ConfigurationGui extends Gui{
 					File dir = new File(resultArgsCopy.get("output").getCompleteArgumentString().trim());
 
 					if (correctConfiguration(resultArgsCopy) && prepOutputDir(dir) == SUCCESSFUL && saveArguments(dir, resultArgsCopy) == SUCCESSFUL) {
-						for (String argumentsKey : resultArgsCopy.keySet()) {
-							for (String key : keys) {
-								if (argumentsKey.equalsIgnoreCase(key)) {
-									ConfigurationGui.this.resultArgsCopy.put("--" + key, resultArgsCopy.get(argumentsKey));
-									break;
-								}
-							}
-						}
-
-						runEvolution.setEnabled(false);
-
-						synchronized (ConfigurationGui.this.resultArgsCopy) {
-							newEvolution = true;
-							ConfigurationGui.this.resultArgsCopy.notify();
-						}
+						addKeyPrefix(resultArgsCopy);
+						new EvolutionGUIThread(combinedGui, resultArgsCopy).start();
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}
+			
+			private void addKeyPrefix(HashMap<String, Arguments> resultArgsCopy) {
+				for (String key : keys) {
+					resultArgsCopy.put("--" + key, resultArgsCopy.get(key));
+					resultArgsCopy.remove(key);
+				}
+			}
 		});
+	}
+	
+	private class EvolutionGUIThread extends Thread {
+		private final CombinedGui combinedGui;
+		private final HashMap<String, Arguments> resultArgsCopy;
+
+		private EvolutionGUIThread(CombinedGui combinedGui, HashMap<String, Arguments> resultArgsCopy) {
+			this.combinedGui = combinedGui;
+			this.resultArgsCopy = resultArgsCopy;
+
+			modRunEvolution(false, "in progress...");
+		}
+
+		@Override
+		public void run() {
+			try {
+				combinedGui.switchGUIs(resultArgsCopy);
+			} catch (Exception e) {
+				e.printStackTrace();
+			} finally {
+				modRunEvolution(true, "Run Evolution");
+			}
+		}
+
+		private void modRunEvolution(boolean state, String label) {
+			runEvolution.setEnabled(state);
+			runEvolution.setText(label);
+			runEvolution.repaint();
+		}
 	}
 	
 	private Object deepCopy(Object obj) throws Exception {
@@ -935,28 +944,25 @@ public class ConfigurationGui extends Gui{
 	
 	private void loadArgumentsToGui(String[] args) throws ClassNotFoundException, IOException {
 		HashMap<String,Arguments> argumentsHash = Arguments.parseArgs(args);
+		Arguments completeArguments;
 
-		for (String key : argumentsHash.keySet()) {
-			
-			String correctKey = key.replace("--", "");
-			Arguments completeArguments = argumentsHash.get(key);
-			String className = "";
-			if(correctKey.equals("output")){
-				className = completeArguments.getArguments().get(0);
-			}else if(correctKey.equals("random-seed")){
-				className = completeArguments.getArguments().get(0);
-			}else{
-				className = completeArguments.getArgumentAsString("classname");
-				if(className == null) {
-					result.setArgument(correctKey, completeArguments);
-					updateConfigurationText();
-					continue;
+		for (String key : keys) {
+			completeArguments = argumentsHash.get("--" + key);
+
+			if (completeArguments != null) {
+				String className = "";
+				if(key.equals("output")){
+					className = completeArguments.getArguments().get(0);
+				}else if(key.equals("random-seed")){
+					className = completeArguments.getArguments().get(0);
+				}else{
+					String[] classNameSegments = completeArguments.getArgumentAsString("classname").split("\\.");
+					className = classNameSegments[classNameSegments.length - 1];
+					
+					specialAddToConfigFile(key, completeArguments);
 				}
-				className = className.split("\\.")[className.split("\\.").length-1];
-				
-				specialAddToConfigFile(correctKey, completeArguments);
+				setLoadedArgToComponent(key, className);
 			}
-			setLoadedArgToComponent(correctKey, className);
 		}
 	}
 
@@ -1402,8 +1408,9 @@ public class ConfigurationGui extends Gui{
 					
 					if(selected.equals("network"))
 						result.getArgument("controllers").removeArgument("network");
-					else
+					else if (!selected.equals("sensors") && !selected.equals("actuators")) {
 						result.setArgument(selected, new Arguments(""));
+					}
 					
 					cleanOptionsPanel();
 					updateConfigurationText();
@@ -1481,33 +1488,6 @@ public class ConfigurationGui extends Gui{
 			else
 				component.setEnabled(false);
 		}
-	}
-	
-	public HashMap<String, Arguments> waitForEvolution() {
-		if (newEvolution != false) {
-			newEvolution = false;
-		}
-
-		if (!runEvolution.getText().equals("Run Evolution")) {
-			runEvolution.setText("Run Evolution");
-		}
-		
-		runEvolution.setEnabled(true);
-		runEvolution.repaint();
-		
-		synchronized (resultArgsCopy) {
-			while (!newEvolution) {
-				try {
-					resultArgsCopy.wait();
-				} catch (InterruptedException e) {
-				}
-			}
-		}
-
-		runEvolution.setText("in progress...");
-		runEvolution.repaint();
-
-		return resultArgsCopy;
 	}
 	
 	@Override

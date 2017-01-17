@@ -63,7 +63,7 @@ public class WithControlsGui extends Gui implements Updatable{
 	protected Simulator simulator;
 
 	public WithControlsGui(JBotSim jBotSim, Arguments args) {
-		super(jBotSim, args);
+		super(jBotSim);
 
 		if(args.getArgumentIsDefined("renderer"))
 			createRenderer(new Arguments(args.getArgumentAsString("renderer")));
